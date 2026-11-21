@@ -1,0 +1,83 @@
+; ipl.asm - 第一天带调试功能版
+; 编译命令: nasm ipl.asm -o ipl.bin
+
+[BITS 16]
+ORG     0x7c00
+
+; --- 标准 FAT12 头部 (BPB) 省略部分，确保磁盘兼容性 ---
+        JMP     entry
+        DB      0x90
+        DB      "HELLOIPL"
+        DW      512, 1, 1, 2, 224, 2880
+        DB      0xf0
+        DW      9, 18, 2
+        DD      0, 2880
+        DB      0, 0, 0x29
+        DD      0xffffffff
+        DB      "HELLO-OS   "
+        DB      "FAT12   "
+        RESB    18
+
+entry:
+        ; 初始化段寄存器
+        MOV     AX, 0
+        MOV     DS, AX
+        MOV     ES, AX
+        MOV     SS, AX
+        MOV     SP, 0x7c00
+
+        ; --- 调试功能：打印 CS 寄存器的值 ---
+        ; 正常情况下 BIOS 加载后 CS 应该是 0x0000
+        MOV     SI, debug_msg
+        CALL    putstr
+        
+        MOV     DX, CS      ; 要调试的寄存器放入 DX
+        CALL    print_hex   ; 调用十六进制打印函数
+
+        ; --- 显示主消息 ---
+        MOV     SI, hello_msg
+        CALL    putstr
+
+fin:
+        HLT
+        JMP     fin
+
+; --- [函数] 打印字符串 ---
+putstr:
+        MOV     AL, [SI]
+        ADD     SI, 1
+        CMP     AL, 0
+        JE      putstr_end
+        MOV     AH, 0x0e
+        MOV     BX, 15
+        INT     0x10
+        JMP     putstr
+putstr_end:
+        RET
+
+; --- [函数] 打印 DX 中的十六进制数 (核心调试工具) ---
+print_hex:
+        PUSHAD              ; 保存所有寄存器
+        MOV     CX, 4       ; 循环 4 次（对应 16 位数的 4 个半字节）
+.hex_loop:
+        ROL     DX, 4       ; 循环左移 4 位，把最高位移到最低位
+        MOV     AX, DX
+        AND     AL, 0x0F    ; 只取低 4 位
+        ADD     AL, '0'     ; 转为 ASCII
+        CMP     AL, '9'
+        JBE     .show
+        ADD     AL, 7       ; 如果是 A-F，调整 ASCII 偏移
+.show:
+        MOV     AH, 0x0e
+        INT     0x10
+        LOOP    .hex_loop
+        POPAD               ; 恢复所有寄存器
+        RET
+
+; --- 字符串定义 ---
+debug_msg:  DB "DEBUG - CS: 0x", 0
+hello_msg:  DB 0x0a, 0x0d, "hello, world", 0x0a, 0x0d, 0
+
+; --- 启动扇区结束标志 ---
+        TIMES   510-($-$$) DB 0
+        DB      0x55, 0xaa
